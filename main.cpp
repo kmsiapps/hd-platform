@@ -3,18 +3,17 @@
 #include <cstdio>
 #include <cassert>
 
-//UDP ���
 #include <WS2tcpip.h>
 #pragma comment (lib, "ws2_32.lib")
 
-#define _CRT_SECURE_NO_WARNINGS//fprintf
+#define _CRT_SECURE_NO_WARNINGS
 
-#include <Windows.h>//api ���������
+#include <Windows.h>
 #include <HD/hd.h>
 #include <HDU/hduError.h>
 #include <HDU/hduVector.h>
 
-#include "hd_device_wrapper.h"
+#include "hd_controller.h"
 #include "hd_comm.h"
 
 using namespace std;
@@ -53,7 +52,7 @@ sockaddr_in master_addr;
 sockaddr_in slave_addr;
 
 HDCommunicator* HDComm;
-HapticDevice* HDevice;
+HapticDeviceController* DeviceCon;
 
 // FOR INITIAL SETTINGS
 #define ALIAS 'M'
@@ -123,7 +122,7 @@ void velCon(hduVector3Dd pos)
 ******************************************************************************/
 HDCallbackCode HDCALLBACK deviceCallback(void *data)
 {
-	HDevice->tick();
+	DeviceCon->tick();
 	
 	HDErrorInfo error;
 	if (HD_DEVICE_ERROR(error = hdGetError())) {
@@ -249,7 +248,7 @@ int main(int argc, char* argv[])
 	// haptics callback
 	std::cout << "haptics callback" << std::endl;
 	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), ALIAS);
-	HDevice = new HapticDevice(phantomId_1, ALIAS, HDComm);
+	DeviceCon = new HapticDeviceController(phantomId_1, ALIAS, HDComm);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
 		deviceCallback, 0, HD_MAX_SCHEDULER_PRIORITY);

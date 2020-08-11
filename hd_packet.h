@@ -23,14 +23,17 @@ public:
 	HapticPacket() {
 		// initialize packet count data
 		*((cnt_t*)(buffer + COUNT_OFFSET)) = 0;
+		*((pos_t*)(buffer + POS_OFFSET)) = 0;
+		*((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t))) = 0;
+		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = 0;
 	}
-;	void update(hduVector3Dd pos) {
+;	void update(hduVector3Dd* pos) {
 		/* update from position data. also automatically updates counter and timestamp. */
 
 		// update position
-		*((pos_t*)(buffer + POS_OFFSET)) = pos[0];
-		*((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t))) = pos[1];
-		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = pos[2];
+		*((pos_t*)(buffer + POS_OFFSET)) = *pos[0];
+		*((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t))) = *pos[1];
+		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = *pos[2];
 		
 		// update packet counter
 		*((cnt_t*)(buffer + COUNT_OFFSET)) += 1;
@@ -49,11 +52,13 @@ public:
 		return buffer;
 	}
 
-	void getPos(hduVector3Dd* pos) {
-		/* update given pos vector from packet */
-		(*pos)[0] = *((pos_t*)(buffer + POS_OFFSET));
-		(*pos)[1] = *((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t)));
-		(*pos)[2] = *((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t) * 2));
+	hduVector3Dd* getPos() {
+		/* return pos vector from packet */
+		return new hduVector3Dd(
+			*((pos_t*)(buffer + POS_OFFSET)),
+			*((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t))),
+			*((pos_t*)(buffer + POS_OFFSET + sizeof(pos_t) * 2))
+		)
 	}
 
 	ts_t getTimestamp() {

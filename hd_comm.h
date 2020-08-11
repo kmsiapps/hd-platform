@@ -20,8 +20,6 @@ private:
 	uint32_t lastRCVPacket = 0;
 
 	char rcvbuf[PACKET_SIZE];
-	HapticPacket *sendingPacket;
-	HapticPacket *receivedPacket;
 
 	uint32_t packetRCVCounter = 0;
 
@@ -38,22 +36,9 @@ public:
 		receivedPacket = new HapticPacket();
 	}
 
-	void preparePacket(bool debug = false) {
-		hdBeginFrame(deviceID);
-		// get current device position
-		hduVector3Dd pos;
-		hdGetDoublev(HD_CURRENT_POSITION, pos);
-
-		hdEndFrame(deviceID);
-
-		// update packet with current position
-		sendingPacket->update(pos);
-
-		if (debug) printf("%c preparePacket::Pos(%.1f %.1f %.1f) Sent(%u) Time(%llu)\n", alias, pos[0], pos[1], pos[2], sendingPacket->getCounter(), sendingPacket->getTimestamp());
-	}
-
-	bool sendPacket(bool debug = false) {
-		if (sendto(socket, sendingPacket->toArray(), sendingPacket->getSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
+	bool sendPacket(HapticPacket *packet, bool debug = false) {
+		// send packet to remote device. return if it succeded
+		if (sendto(socket, packet->toArray(), packet->getSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
 			if (debug) printf("%c sendingPacket::Success\n", alias);
 			return true;
 		}
@@ -63,11 +48,14 @@ public:
 		}
 	}
 
-	bool rcvPacket(bool debug = false) {
+	HapticPacket* rcvPacket(bool debug = false) {
+		// recieve packet from remote device. returns ptr of packet, or NULL if failed
 		bool hasRCVed = false;
+		HapticPacket* receivedPacket = NULL;
 		while (true) {
 			uint32_t bytesIn = recvfrom(socket, rcvbuf, sizeof(rcvbuf), 0, (sockaddr*)sock_addr, &sock_addr_size);
 			if (bytesIn != SOCKET_ERROR && bytesIn == sizeof(rcvbuf)) {
+				receivedPacket = new HapticPacket();
 				receivedPacket->update(rcvbuf);
 				packetRCVCounter++;
 
@@ -89,14 +77,11 @@ public:
 				break;
 			}
 		}
-		return hasRCVed;
-	}
-
-	bool isPacketValid() {
-		return (lastRCVPacket == receivedPacket->getCounter());
-	}
-
-	HapticPacket* getPacket() {
 		return receivedPacket;
+	}
+
+	bool isLatestPacket(HapticPacket* packet) {
+		// returns if given packet is latest packet received by this communicator.
+		return (lastRCVPacket == packet->getCounter());
 	}
 };
