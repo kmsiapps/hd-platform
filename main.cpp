@@ -55,7 +55,7 @@ HDCommunicator* HDComm;
 HapticDeviceController* DeviceCon;
 
 // FOR INITIAL SETTINGS
-#define ALIAS 'M'
+#define ALIAS 'S'
 #define MASTER_ADDR "192.168.1.158"
 #define MASTER_PORT 25000
 #define SLAVE_ADDR "192.168.1.136"
