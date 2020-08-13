@@ -17,71 +17,69 @@ private:
 	int32_t sock_addr_size;
 
 	char alias;
-	uint32_t lastRCVPacket = 0;
-
 	char rcvbuf[PACKET_SIZE];
-
-	uint32_t packetRCVCounter = 0;
+	uint32_t last_received_packet = 0;
+	uint32_t packet_receive_counter = 0;
 
 public:
-	HHD deviceID;
+	HHD device_id;
+	HDCommunicator(const HHD device_id, const SOCKET socket,
+				   const sockaddr_in* sock_addr, const int32_t sock_addr_size, const char alias);
+	bool SendPacket(const HapticPacket packet, bool debug = false);
+	HapticPacket* ReceivePacket(bool debug = false);
+	bool IsLatestPacket(const HapticPacket packet);
 
-	HDCommunicator(HHD deviceID, SOCKET socket, sockaddr_in* sock_addr, int32_t sock_addr_size, char alias) {
-		this->deviceID = deviceID;
-		this->socket = socket; // socket fd
-		this->sock_addr = sock_addr; // sock_addr struct ptr
-		this->sock_addr_size = sock_addr_size; // sock_addr struct size
-		this->alias = alias; // e.g. 'M' for master, 'S' for slave
-		sendingPacket = new HapticPacket();
-		receivedPacket = new HapticPacket();
+};
+
+HDCommunicator(const HHD device_id, const SOCKET socket,
+				const sockaddr_in* sock_addr, const int32_t sock_addr_size, const char alias) :
+	device_id(device_id), socket(socket), sock_addr(sock_addr), sock_addr_size(sock_addr_size), alias(alias) {}
+
+bool HDCommunicator::SendPacket(const HapticPacket packet, bool debug = false) {
+	// send packet to remote device. return if it succeded
+	if (sendto(socket, packet.ToArray(), packet.GetSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
+		if (debug) printf("%c sendingPacket::Success\n", alias);
+		return true;
 	}
+	else {
+		printf("%c sendingPacket::Error\n", alias);
+		return false;
+	}
+}
 
-	bool sendPacket(HapticPacket *packet, bool debug = false) {
-		// send packet to remote device. return if it succeded
-		if (sendto(socket, packet->toArray(), packet->getSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
-			if (debug) printf("%c sendingPacket::Success\n", alias);
-			return true;
+HapticPacket* HDCommunicator::ReceivePacket(bool debug = false) {
+	// recieve packet from remote device. returns ptr of packet, or NULL if failed
+	bool has_received = false;
+	HapticPacket* received_packet = NULL;
+	while (true) {
+		uint32_t bytesIn = recvfrom(socket, rcvbuf, sizeof(rcvbuf), 0, (sockaddr*)sock_addr, &sock_addr_size);
+		if (bytesIn != SOCKET_ERROR && bytesIn == sizeof(rcvbuf)) {
+			received_packet = new HapticPacket(rcvbuf);
+			packet_receive_counter++;
+
+			if (received_packet->GetPacketNum() > last_received_packet) {
+				last_received_packet = received_packet->GetPacketNum();
+			}
+			has_received = true;
 		}
 		else {
-			printf("%c sendingPacket::Error\n", alias);
-			return false;
+			if (debug && has_received) {
+				uint32_t current_packet_num = received_packet->GetPacketNum();
+				printf("%c ReceivePacket::Delay(%5.2fms) PacketNo(%llu) Loss(%u/%u)\n",
+					alias, (GetCurrentTime() - received_packet->GetTimestamp()) / 1000.0,
+					current_packet_num, (current_packet_num - packet_receive_counter), current_packet_num);
+				/*
+				printf("%c ReceivePacket::Pos(%.2f %.2f %.2f) Time(%llu) Packet(%u)\n", alias, *((float*)(rcvbuf + POS_OFFSET)),
+					*((float*)(rcvbuf + POS_OFFSET + 4)), *((float*)(rcvbuf + POS_OFFSET + 8)), getRCVTimestamp(), getcurrent_packet_num());
+				*/
+			}
+			break;
 		}
 	}
+	return received_packet;
+}
 
-	HapticPacket* rcvPacket(bool debug = false) {
-		// recieve packet from remote device. returns ptr of packet, or NULL if failed
-		bool hasRCVed = false;
-		HapticPacket* receivedPacket = NULL;
-		while (true) {
-			uint32_t bytesIn = recvfrom(socket, rcvbuf, sizeof(rcvbuf), 0, (sockaddr*)sock_addr, &sock_addr_size);
-			if (bytesIn != SOCKET_ERROR && bytesIn == sizeof(rcvbuf)) {
-				receivedPacket = new HapticPacket();
-				receivedPacket->update(rcvbuf);
-				packetRCVCounter++;
-
-				if (receivedPacket->getCounter() > lastRCVPacket) {
-					lastRCVPacket = receivedPacket->getCounter();
-				}
-				hasRCVed = true;
-			}
-			else {
-				if (debug && hasRCVed) {
-					uint32_t RCVpacketCount = receivedPacket->getCounter();
-					printf("%c rcvPacket::Delay(%5.2fms) PacketNo(%llu) Loss(%u/%u)\n", alias, (getCurrentTime() - receivedPacket->getTimestamp()) / 1000.0,
-						RCVpacketCount, (RCVpacketCount - packetRCVCounter), RCVpacketCount);
-					/*
-					printf("%c rcvPacket::Pos(%.2f %.2f %.2f) Time(%llu) Packet(%u)\n", alias, *((float*)(rcvbuf + POS_OFFSET)),
-						*((float*)(rcvbuf + POS_OFFSET + 4)), *((float*)(rcvbuf + POS_OFFSET + 8)), getRCVTimestamp(), getRCVpacketCount());
-					*/
-				}
-				break;
-			}
-		}
-		return receivedPacket;
-	}
-
-	bool isLatestPacket(HapticPacket* packet) {
-		// returns if given packet is latest packet received by this communicator.
-		return (lastRCVPacket == packet->getCounter());
-	}
-};
+bool HDCommunicator::IsLatestPacket(const HapticPacket packet) {
+	// returns if given packet is latest packet received by this communicator.
+	return (last_received_packet == packet.GetPacketNum());
+}
