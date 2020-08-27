@@ -27,9 +27,9 @@ public:
 		sockaddr_in* sock_addr, const int32_t sock_addr_size, const char alias) :
 		device_id(device_id), socket(socket), sock_addr(sock_addr), sock_addr_size(sock_addr_size), alias(alias) {}
 
-	bool SendPacket(HapticPacket packet, bool debug = false) {
+	bool SendPacket(HapticPacket* packet, bool debug = false) {
 		// send packet to remote device. return if it succeded
-		if (sendto(socket, packet.ToArray(), packet.GetSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
+		if (sendto(socket, packet->ToArray(), packet->GetSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
 			if (debug) printf("%c sendingPacket::Success\n", alias);
 			return true;
 		}
@@ -62,7 +62,7 @@ public:
 						current_packet_num, (current_packet_num - packet_receive_counter), current_packet_num);
 					/*
 					printf("%c ReceivePacket::Pos(%.2f %.2f %.2f) Time(%llu) Packet(%u)\n", alias, *((float*)(rcvbuf + POS_OFFSET)),
-					*((float*)(rcvbuf + POS_OFFSET + 4)), *((float*)(rcvbuf + POS_OFFSET + 8)), getRCVTimestamp(), getcurrent_packet_num());
+					*((float*)(rcvbuf + POS_OFFSET + 4)), *((float*)(rcvbuf + POS_OFFSET + 8)), received_packet->GetTimestamp(), current_packet_num);
 					*/
 				}
 				break;

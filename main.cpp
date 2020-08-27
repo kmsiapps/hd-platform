@@ -18,11 +18,7 @@
 
 using namespace std;
 
-/* The names of the two haptic devices. */
-#define DEVICE_NAME_1  "PHANToM 1"
-#define DEVICE_NAME_2  "PHANToM 2"
-
-HHD phantomId_1; // Dual Phantom devices.
+HHD phantomId_1, phantomId_2; // Dual Phantom devices.
 HDSchedulerHandle gSchedulerCallback = HD_INVALID_HANDLE;
 
 hduVector3Dd forceField(hduVector3Dd pos);
@@ -52,18 +48,23 @@ sockaddr_in master_addr;
 sockaddr_in slave_addr;
 
 HDCommunicator* HDComm;
+HDCommunicator* HDComm2;
+
 HapticDeviceController* DeviceCon;
+HapticDeviceController* DeviceCon2;
 
 // FOR INITIAL SETTINGS
-#define ALIAS 'S'
-#define MASTER_ADDR "192.168.1.158"
-#define MASTER_PORT 25000
-#define SLAVE_ADDR "192.168.1.136"
-#define SLAVE_PORT 25001
+char DEVICE_NAME_1[32] = "PHANToM 1";
+char DEVICE_NAME_2[32] = "PHANToM 2";
+char ALIAS = 'S';
+char MASTER_ADDR[32] = "127.0.0.1"; //"192.168.1.158";
+uint32_t MASTER_PORT = 25000;
+char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136";
+uint32_t SLAVE_PORT = 25001;
 
 /******************************************************************************
- Makes a device specified in the pUserData current.
- Queries haptic device state: position, force, etc.
+Makes a device specified in the pUserData current.
+Queries haptic device state: position, force, etc.
 ******************************************************************************/
 HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 {
@@ -77,7 +78,7 @@ HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 }
 
 /*******************************************************************************
- Given the position is space, calculates the (modified) coulomb force.
+Given the position is space, calculates the (modified) coulomb force.
 *******************************************************************************/
 
 
@@ -117,13 +118,14 @@ void velCon(hduVector3Dd pos)
 }
 
 /******************************************************************************
- Main callback.  Retrieves position from both devices, calculates forces,
- and sets forces for both devices.
+Main callback.  Retrieves position from both devices, calculates forces,
+and sets forces for both devices.
 ******************************************************************************/
 HDCallbackCode HDCALLBACK deviceCallback(void *data)
 {
 	DeviceCon->tick();
-	
+	DeviceCon2->tick();
+
 	HDErrorInfo error;
 	if (HD_DEVICE_ERROR(error = hdGetError())) {
 		hduPrintError(stderr, &error, "Error during scheduler callback");
@@ -140,42 +142,44 @@ int initSocket() {
 	master_addr.sin_port = htons(MASTER_PORT);
 	inet_pton(AF_INET, MASTER_ADDR, &master_addr.sin_addr);
 
-	memset(&slave_addr, 0, sizeof(master_addr));
+	memset(&slave_addr, 0, sizeof(slave_addr));
 	slave_addr.sin_family = AF_INET;
 	slave_addr.sin_port = htons(SLAVE_PORT);
 	inet_pton(AF_INET, SLAVE_ADDR, &slave_addr.sin_addr);
 
-	// socket creation
-	master_sock = socket(AF_INET, SOCK_DGRAM, 0);
-	slave_sock = socket(AF_INET, SOCK_DGRAM, 0);
-
 	ULONG isNonBlocking = 1;
-	ioctlsocket(master_sock, FIONBIO, &isNonBlocking);
-	ioctlsocket(slave_sock, FIONBIO, &isNonBlocking);
 
-	if (ALIAS == 'S') {
+	// socket creation
+
+	//if (ALIAS == 'S') {
+	{
+		slave_sock = socket(AF_INET, SOCK_DGRAM, 0);
+		ioctlsocket(slave_sock, FIONBIO, &isNonBlocking);
 		if (::bind(slave_sock, (sockaddr*)&slave_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
 			cout << "Can't bind slave socket! " << WSAGetLastError() << endl;
 			return -1;
 		}
 	}
-	else if (ALIAS == 'M') {
+	//else if (ALIAS == 'M') {
+	{
+		master_sock = socket(AF_INET, SOCK_DGRAM, 0);
+		ioctlsocket(master_sock, FIONBIO, &isNonBlocking);
 		if (::bind(master_sock, (sockaddr*)&master_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
 			cout << "Can't bind master socket! " << WSAGetLastError() << endl;
 			return -1;
 		}
 	}
-	else {
-		printf("Err: Alias should be either M or S\n");
-		return -1;
-	}
+	/*else {
+	printf("Err: Alias should be either M or S\n");
+	return -1;
+	}*/
 
 	return 0;
 }
 
 /******************************************************************************
- This handler gets called when the process is exiting.  Ensures that HDAPI is
- properly shutdown.
+This handler gets called when the process is exiting.  Ensures that HDAPI is
+properly shutdown.
 ******************************************************************************/
 void exitHandler()
 {
@@ -194,11 +198,29 @@ void exitHandler()
 }
 
 /******************************************************************************
- Main entry point.
+Main entry point.
 ******************************************************************************/
 int main(int argc, char* argv[])
 {
 	HDErrorInfo error;
+
+	if (argc > 1) {
+		if (argc == 5) {
+			ALIAS = argv[1][0];
+			if (ALIAS == 'M') {
+				strcpy(SLAVE_ADDR, argv[2]);
+				SLAVE_PORT = atoi(argv[3]);
+			}
+			else {
+				strcpy(MASTER_ADDR, argv[2]);
+				MASTER_PORT = atoi(argv[3]);
+			}
+			strcpy(DEVICE_NAME_1, argv[4]);
+		}
+		else {
+			printf("Usage: ./CouloumbForceDual.exe <alias> <target IP> <target PORT> <device name>n");
+		}
+	}
 
 	printf("Starting application\n");
 
@@ -206,6 +228,8 @@ int main(int argc, char* argv[])
 
 	// Initialize device
 	phantomId_1 = hdInitDevice(DEVICE_NAME_1);
+	phantomId_2 = hdInitDevice(DEVICE_NAME_2);
+
 	if (HD_DEVICE_ERROR(lastError = hdGetError()))
 	{
 		hduPrintError(stderr, &error, "Failed to initialize first haptic device");
@@ -247,8 +271,11 @@ int main(int argc, char* argv[])
 
 	// haptics callback
 	std::cout << "haptics callback" << std::endl;
-	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), ALIAS);
-	DeviceCon = new HapticDeviceController(phantomId_1, ALIAS, HDComm);
+	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), 'M');
+	DeviceCon = new HapticDeviceController(phantomId_1, 'M', HDComm);
+
+	HDComm2 = new HDCommunicator(phantomId_2, slave_sock, &master_addr, sizeof(master_addr), 'S');
+	DeviceCon2 = new HapticDeviceController(phantomId_2, 'S', HDComm2);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
 		deviceCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
