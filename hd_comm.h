@@ -2,6 +2,8 @@
 
 #include <WS2tcpip.h>
 #include <stdio.h>
+#include <string>
+#include <sstream>
 
 #include <HD/hd.h>
 #include <HDU/hduVector.h>
@@ -9,6 +11,7 @@
 #include "hd_packet.h"
 #include "hd_types.h"
 #include "hd_time.h"
+#include "hd_logger.h"
 
 class HDCommunicator {
 private:
@@ -21,25 +24,39 @@ private:
 	uint32_t last_received_packet = 0;
 	uint32_t packet_receive_counter = 0;
 	HHD device_id;
+	Logger *sndlogger;
+	Logger *rcvlogger;
+	Logger *errlogger;
 
 public:
 	HDCommunicator(const HHD device_id, const SOCKET socket,
-		sockaddr_in* sock_addr, const int32_t sock_addr_size, const char alias) :
-		device_id(device_id), socket(socket), sock_addr(sock_addr), sock_addr_size(sock_addr_size), alias(alias) {}
+				   sockaddr_in* sock_addr, const int32_t sock_addr_size, const char alias,
+				   Logger* sndlogger, Logger* rcvlogger, Logger* errlogger) :
+		device_id(device_id), socket(socket), sock_addr(sock_addr), sock_addr_size(sock_addr_size),
+		alias(alias), sndlogger(sndlogger), rcvlogger(rcvlogger), errlogger(errlogger) {}
 
-	bool SendPacket(HapticPacket* packet, bool debug = false) {
+	bool SendPacket(HapticPacket* packet, bool debug) {
 		// send packet to remote device. return if it succeded
 		if (sendto(socket, packet->ToArray(), packet->GetSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
-			if (debug) printf("%c sendingPacket::Success\n", alias);
+			if (debug) {
+				std::stringstream msg_stream;
+				hduVector3Dd &packet_pos = packet->GetPos();
+
+				// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ
+				msg_stream << "," << 0 << "," << packet->GetTimestamp() << "," << packet->GetPacketNum() << "," <<
+					packet_pos[0] << "," << packet_pos[1] << "," << packet_pos[2];
+
+				sndlogger->log(msg_stream.str());
+			}
 			return true;
 		}
 		else {
-			printf("%c sendingPacket::Error\n", alias);
+			errlogger->log("Packet send failed!");
 			return false;
 		}
 	}
 
-	HapticPacket* ReceivePacket(bool debug = false) {
+	HapticPacket* ReceivePacket(bool debug = true) {
 		// recieve packet from remote device. returns ptr of packet, or NULL if failed
 		bool has_received = false;
 		HapticPacket* received_packet = NULL;
@@ -55,15 +72,16 @@ public:
 				has_received = true;
 			}
 			else {
-				if (debug && has_received) {
+				if (has_received && debug) {
 					uint32_t current_packet_num = received_packet->GetPacketNum();
-					printf("%c ReceivePacket::Delay(%5.2fms) PacketNo(%llu) Loss(%u/%u)\n",
-						alias, (getCurrentTime() - received_packet->GetTimestamp()) / 1000.0,
-						current_packet_num, (current_packet_num - packet_receive_counter), current_packet_num);
-					/*
-					printf("%c ReceivePacket::Pos(%.2f %.2f %.2f) Time(%llu) Packet(%u)\n", alias, *((float*)(rcvbuf + POS_OFFSET)),
-					*((float*)(rcvbuf + POS_OFFSET + 4)), *((float*)(rcvbuf + POS_OFFSET + 8)), received_packet->GetTimestamp(), current_packet_num);
-					*/
+					std::stringstream msg_stream;
+
+					// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ, Loss
+					msg_stream << "," << 0 << "," << received_packet->GetTimestamp() << "," << current_packet_num << "," <<
+					*((float*)(rcvbuf + POS_OFFSET)) << "," << *((float*)(rcvbuf + POS_OFFSET + 4)) << "," << *((float*)(rcvbuf + POS_OFFSET + 8)) <<
+					(current_packet_num - packet_receive_counter) << "/" << current_packet_num;
+
+					rcvlogger->log(msg_stream.str());
 				}
 				break;
 			}

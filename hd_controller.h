@@ -1,11 +1,14 @@
 #pragma once
 
 #include <list>
+#include <string>
+#include <sstream>
 
 #include <HD/hd.h>
 #include <HDU/hduVector.h>
 
 #include "hd_comm.h"
+#include "hd_logger.h"
 
 #define PREDICTOR_QUEUE_SIZE 5 // received_queue Size
 #define PREDICTOR_CONSTANT_K 0.3 // K in Weber's law
@@ -21,6 +24,9 @@ private:
 	HDCommunicator *hdcomm;						// HDCommunicator for udp packet exchange
 	std::list<HapticPacket*> received_queue;	// queue used for predictive coding
 	std::list<HapticPacket*> sent_queue;		// queue used for predictive coding
+	Logger *errlogger;
+	Logger *rcvlogger;
+	Logger *sndlogger;
 
 	float pos_delta;							// last movement difference, used for perception based coding
 
@@ -37,7 +43,7 @@ private:
 		return force_vec;
 	}
 
-	HapticPacket* PreparePacket(bool debug = false) {
+	HapticPacket* PreparePacket() {
 		/* create packet from current device state. */
 
 		// get current device position
@@ -45,10 +51,6 @@ private:
 		hdGetDoublev(HD_CURRENT_POSITION, pos);
 
 		HapticPacket *sending_packet = new HapticPacket(pos);
-
-		if (debug)
-			printf("%c PreparePacket::Pos(%.1f %.1f %.1f) Sent(%u) Time(%llu)\n",
-					alias, pos[0], pos[1], pos[2], sending_packet->GetPacketNum(), sending_packet->GetTimestamp());
 		return sending_packet;
 	}
 
@@ -74,7 +76,7 @@ private:
 		return acc;
 	}
 
-	void UpdateState(bool debug=false) {
+	void UpdateState(bool debug=true) {
 		// recieve packet from remote, and update current device's state with the packet
 		HapticPacket* packet = hdcomm->ReceivePacket(debug);
 		hduVector3Dd target_pos(0, 0, 0);
@@ -83,10 +85,14 @@ private:
 
 		if (packet == NULL) {
 			// No received pos
-			//printf("%c::UpdateState::Use pos prediction(No packet received)\n", alias);
 			hduVector3Dd base_pos = received_queue.back() ? received_queue.back()->GetPos() : current_pos;
 			target_pos = PredictPos(base_pos, received_queue);
-			if (debug) printf("%c UpdateState::Using predicted position\n", alias);
+
+			std::stringstream msg_stream;
+
+			// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ, Loss
+			msg_stream << 1 << ",,," << target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << ",";
+			rcvlogger->log(msg_stream.str());
 		}
 		else {
 			target_pos = packet->GetPos();
@@ -109,9 +115,9 @@ private:
 		}
 	}
 
-	void SendState(bool debug = false) {
+	void SendState(bool debug = true) {
 		// predictive, perception-based packet sending
-		HapticPacket* packet = PreparePacket(debug);
+		HapticPacket* packet = PreparePacket();
 		hduVector3Dd real_pos = packet->GetPos();
 		hduVector3Dd prev_pos;
 
@@ -123,10 +129,12 @@ private:
 
 		// perception-based packet sending
 		if (!IsPerceptable(PredictPos(prev_pos, sent_queue), real_pos)) {
-			if (debug) printf("%c SendState::packet sending dismissed\n", alias);
+			if (debug) {
+				sndlogger->log("1,");
+			}
 		}
 		else {
-			hdcomm->SendPacket(packet);
+			hdcomm->SendPacket(packet, debug);
 			sent_queue.push_back(packet);
 			if (sent_queue.size() > PREDICTOR_QUEUE_SIZE) {
 				delete sent_queue.front();
@@ -142,13 +150,13 @@ private:
 	}
 
 public:
-	HapticDeviceController(const HHD device_id, const char alias, HDCommunicator* hdcomm) :
-		device_id(device_id), alias(alias), hdcomm(hdcomm) {
+	HapticDeviceController(const HHD device_id, const char alias, HDCommunicator* hdcomm,
+						   Logger* sndlogger, Logger* rcvlogger, Logger* errlogger) :
+						   device_id(device_id), alias(alias), hdcomm(hdcomm),
+						   sndlogger(sndlogger), rcvlogger(rcvlogger), errlogger(errlogger){
 		pos_delta = 0;
-	}
-
-	HapticDeviceController() {
-
+		std::string alias_str("");
+		alias_str.push_back(alias);
 	}
 
 	void tick() {
@@ -164,7 +172,7 @@ public:
 			SendState();
 		}
 		else {
-			printf("Err: Alias should be either M or S\n");
+			errlogger->log("Err: Alias should be either M or S\n");
 			exit(-1);
 		}
 		hdEndFrame(device_id);
