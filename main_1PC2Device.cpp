@@ -20,6 +20,7 @@ using namespace std;
 
 HHD phantomId_1, phantomId_2; // Dual Phantom devices.
 HDSchedulerHandle gSchedulerCallback = HD_INVALID_HANDLE;
+HDSchedulerHandle gSchedulerCallback2 = HD_INVALID_HANDLE;
 
 hduVector3Dd forceField(hduVector3Dd pos);
 
@@ -124,6 +125,18 @@ and sets forces for both devices.
 HDCallbackCode HDCALLBACK deviceCallback(void *data)
 {
 	DeviceCon->tick();
+
+	HDErrorInfo error;
+	if (HD_DEVICE_ERROR(error = hdGetError())) {
+		hduPrintError(stderr, &error, "Error during scheduler callback");
+		if (hduIsSchedulerError(&error)) return HD_CALLBACK_DONE;
+	}
+
+	return HD_CALLBACK_CONTINUE;
+}
+
+HDCallbackCode HDCALLBACK deviceCallback2(void *data)
+{
 	DeviceCon2->tick();
 
 	HDErrorInfo error;
@@ -188,12 +201,19 @@ void exitHandler()
 	{
 		hdStopScheduler();
 		hdUnschedule(gSchedulerCallback);
+		hdUnschedule(gSchedulerCallback2);
 	}
 
 	if (phantomId_1 != HD_INVALID_HANDLE)
 	{
 		hdDisableDevice(phantomId_1);
 		phantomId_1 = HD_INVALID_HANDLE;
+	}
+
+	if (phantomId_2 != HD_INVALID_HANDLE)
+	{
+		hdDisableDevice(phantomId_2);
+		phantomId_2 = HD_INVALID_HANDLE;
 	}
 }
 
@@ -226,20 +246,31 @@ int main(int argc, char* argv[])
 
 	atexit(exitHandler);
 
-	// Initialize device
+	// First device.
 	phantomId_1 = hdInitDevice(DEVICE_NAME_1);
-	phantomId_2 = hdInitDevice(DEVICE_NAME_2);
-
 	if (HD_DEVICE_ERROR(lastError = hdGetError()))
 	{
 		hduPrintError(stderr, &error, "Failed to initialize first haptic device");
 		fprintf(stderr, "Make sure the configuration \"%s\" exists\n", DEVICE_NAME_1);
 		fprintf(stderr, "\nPress any key to quit.\n");
-		getchar();
 		exit(-1);
 	}
 
-	printf("Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
+	printf("1. Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
+	hdEnable(HD_FORCE_OUTPUT);
+	hdEnable(HD_FORCE_RAMPING);
+
+	// Second device.
+	phantomId_2 = hdInitDevice(DEVICE_NAME_2);
+	if (HD_DEVICE_ERROR(lastError = hdGetError()))
+	{
+		hduPrintError(stderr, &error, "Failed to initialize second haptic device");
+		fprintf(stderr, "Make sure the configuration \"%s\" exists\n", DEVICE_NAME_2);
+		fprintf(stderr, "\nPress any key to quit.\n");
+		exit(-1);
+	}
+
+	printf("2. Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
 	hdEnable(HD_FORCE_OUTPUT);
 	hdEnable(HD_FORCE_RAMPING);
 
@@ -278,7 +309,10 @@ int main(int argc, char* argv[])
 	DeviceCon2 = new HapticDeviceController(phantomId_2, 'S', HDComm2);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
-		deviceCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
+		deviceCallback, 0, HD_DEFAULT_SCHEDULER_PRIORITY);
+
+	gSchedulerCallback2 = hdScheduleAsynchronous(
+		deviceCallback2, 0, HD_DEFAULT_SCHEDULER_PRIORITY);
 
 	if (HD_DEVICE_ERROR(error = hdGetError()))
 	{

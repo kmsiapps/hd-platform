@@ -7,8 +7,9 @@
 
 #include "hd_comm.h"
 
-#define PREDICTOR_QUEUE_SIZE 2 // received_queue Size
-#define PREDICTOR_CONSTANT_K 0.1 // K in Weber's law
+#define PREDICTOR_QUEUE_SIZE 5 // received_queue Size
+#define PREDICTOR_CONSTANT_K 0.3 // K in Weber's law
+#define FORCE_STRENGTH 0.3
 
 class HapticDeviceController {
 private:
@@ -30,7 +31,7 @@ private:
 		hduVector3Dd force_vec(0, 0, 0);
 
 		// Attract the kCharge to the center of the sphere.
-		force_vec = -0.1*pos; // default = 0.1
+		force_vec = -1 * FORCE_STRENGTH * pos;
 		force_vec *= kCharge;
 
 		return force_vec;
@@ -39,13 +40,9 @@ private:
 	HapticPacket* PreparePacket(bool debug = false) {
 		/* create packet from current device state. */
 
-		hdBeginFrame(device_id);
 		// get current device position
 		hduVector3Dd pos;
-		hdMakeCurrentDevice(device_id);
 		hdGetDoublev(HD_CURRENT_POSITION, pos);
-
-		hdEndFrame(device_id);
 
 		HapticPacket *sending_packet = new HapticPacket(pos);
 
@@ -58,29 +55,30 @@ private:
 	hduVector3Dd PredictPos(const hduVector3Dd base_pos, std::list<HapticPacket*>& queue) {
 		std::list<HapticPacket*>::iterator iter;
 		hduVector3Dd prev(0, 0, 0);
-		if (queue.size() > 0)
+		if (queue.size() > 1)
 			prev = queue.front()->GetPos();
+		else
+			return base_pos;
 
-		hduVector3Dd acc = hduVector3Dd(0, 0, 0);
+		hduVector3Dd acc(0, 0, 0);
 
-		for (iter = queue.begin(); iter != queue.end(); iter++) {
+		for (iter = ++queue.begin(); iter != queue.end(); ++iter) {
 			// calculate vector slope
 			acc += ((**iter).GetPos() - prev);
 			prev = (**iter).GetPos();
 		}
 
-		acc /= queue.size();
+		acc /= queue.size() - 1;
 		acc += base_pos;
 
 		return acc;
 	}
 
-	void UpdateState() {
+	void UpdateState(bool debug=false) {
 		// recieve packet from remote, and update current device's state with the packet
-		HapticPacket* packet = hdcomm->ReceivePacket();
+		HapticPacket* packet = hdcomm->ReceivePacket(debug);
 		hduVector3Dd target_pos(0, 0, 0);
 		hduVector3Dd current_pos;
-		hdMakeCurrentDevice(device_id);
 		hdGetDoublev(HD_CURRENT_POSITION, current_pos);
 
 		if (packet == NULL) {
@@ -88,9 +86,9 @@ private:
 			//printf("%c::UpdateState::Use pos prediction(No packet received)\n", alias);
 			hduVector3Dd base_pos = received_queue.back() ? received_queue.back()->GetPos() : current_pos;
 			target_pos = PredictPos(base_pos, received_queue);
+			if (debug) printf("%c UpdateState::Using predicted position\n", alias);
 		}
 		else {
-			if (alias == 'S') printf("%c::UpdateState::POS RECEIVED\n", alias);
 			target_pos = packet->GetPos();
 		}
 
@@ -138,7 +136,9 @@ private:
 	}
 
 	bool IsPerceptable(const hduVector3Dd pred_pos, const hduVector3Dd real_pos) {
-		return (pred_pos - real_pos).magnitude() >= PREDICTOR_CONSTANT_K * (pos_delta + 0.01);
+		float i = (pred_pos - real_pos).magnitude();
+		float delta_i = PREDICTOR_CONSTANT_K * (pos_delta + 0.0001);
+		return i >= delta_i;
 	}
 
 public:
@@ -147,15 +147,20 @@ public:
 		pos_delta = 0;
 	}
 
+	HapticDeviceController() {
+
+	}
+
 	void tick() {
 		hdBeginFrame(device_id);
+		hdMakeCurrentDevice(device_id);
 		
 		if (alias == 'M') {
 			SendState();
-			UpdateState();
+			UpdateState(true);
 		}
 		else if (alias == 'S') {
-			UpdateState();
+			UpdateState(true);
 			SendState();
 		}
 		else {
