@@ -38,16 +38,6 @@ public:
 	bool SendPacket(HapticPacket* packet, bool debug) {
 		// send packet to remote device. return if it succeded
 		if (sendto(socket, packet->ToArray(), packet->GetSize(), 0, (sockaddr*)sock_addr, sock_addr_size) != SOCKET_ERROR) {
-			if (debug) {
-				std::stringstream msg_stream;
-				hduVector3Dd &packet_pos = packet->GetPos();
-
-				// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ
-				msg_stream << "," << 0 << "," << packet->GetTimestamp() << "," << packet->GetPacketNum() << "," <<
-					packet_pos[0] << "," << packet_pos[1] << "," << packet_pos[2];
-
-				sndlogger->log(msg_stream.str());
-			}
 			return true;
 		}
 		else {
@@ -72,17 +62,6 @@ public:
 				has_received = true;
 			}
 			else {
-				if (has_received && debug) {
-					uint32_t current_packet_num = received_packet->GetPacketNum();
-					std::stringstream msg_stream;
-
-					// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ, Loss
-					msg_stream << "," << 0 << "," << received_packet->GetTimestamp() << "," << current_packet_num << "," <<
-					*((float*)(rcvbuf + POS_OFFSET)) << "," << *((float*)(rcvbuf + POS_OFFSET + 4)) << "," << *((float*)(rcvbuf + POS_OFFSET + 8)) <<
-					(current_packet_num - packet_receive_counter) << "/" << current_packet_num;
-
-					rcvlogger->log(msg_stream.str());
-				}
 				break;
 			}
 		}
@@ -92,5 +71,13 @@ public:
 	bool IsLatestPacket(HapticPacket packet) {
 		// returns if given packet is latest packet received by this communicator.
 		return (last_received_packet == packet.GetPacketNum());
+	}
+
+	uint32_t getReceivedPacketCount() {
+		return packet_receive_counter;
+	}
+
+	uint32_t getLatestPacketCount() {
+		return last_received_packet;
 	}
 };

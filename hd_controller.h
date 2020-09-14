@@ -8,10 +8,11 @@
 #include <HDU/hduVector.h>
 
 #include "hd_comm.h"
+#include "hd_time.h"
 #include "hd_logger.h"
 
 #define PREDICTOR_QUEUE_SIZE 5 // received_queue Size
-#define PREDICTOR_CONSTANT_K 0.3 // K in Weber's law
+#define PREDICTOR_CONSTANT_K 0.1 // K in Weber's law
 #define FORCE_STRENGTH 0.3
 
 class HapticDeviceController {
@@ -28,6 +29,9 @@ private:
 	Logger *rcvlogger;
 	Logger *sndlogger;
 
+	cnt_t current_packet_num;
+
+	ts_t last_received_timestamp;
 	float pos_delta;							// last movement difference, used for perception based coding
 
 	hduVector3Dd PosToForce(const hduVector3Dd pos)
@@ -50,7 +54,7 @@ private:
 		hduVector3Dd pos;
 		hdGetDoublev(HD_CURRENT_POSITION, pos);
 
-		HapticPacket *sending_packet = new HapticPacket(pos);
+		HapticPacket *sending_packet = new HapticPacket(pos, current_packet_num);
 		return sending_packet;
 	}
 
@@ -85,17 +89,24 @@ private:
 
 		if (packet == NULL) {
 			// No received pos
-			hduVector3Dd base_pos = received_queue.back() ? received_queue.back()->GetPos() : current_pos;
+			hduVector3Dd base_pos = received_queue.size()? received_queue.back()->GetPos() : current_pos;
 			target_pos = PredictPos(base_pos, received_queue);
 
 			std::stringstream msg_stream;
 
-			// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ, Loss
-			msg_stream << 1 << ",,," << target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << ",";
+			// Predict? , PacketTime, Delay, PacketNo, PosX, PosY, PosZ, Loss
+			msg_stream << 1 << ",,,," << target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << ",";
 			rcvlogger->log(msg_stream.str());
 		}
 		else {
 			target_pos = packet->GetPos();
+			std::stringstream msg_stream;
+
+			// Predict? , PacketTime, Delay, PacketNo, PosX, PosY, PosZ, Loss
+			msg_stream << 0 << "," << packet->GetTimestamp() << "," << getCurrentTime() - packet->GetTimestamp() << ","
+				       << packet->GetPacketNum() << "," << target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << ","
+				       << hdcomm->getLatestPacketCount() - hdcomm->getReceivedPacketCount() << "/" << hdcomm->getLatestPacketCount();
+			rcvlogger->log(msg_stream.str());
 		}
 
 		hduVector3Dd posDiff = current_pos - target_pos;
@@ -134,7 +145,18 @@ private:
 			}
 		}
 		else {
-			hdcomm->SendPacket(packet, debug);
+			if (hdcomm->SendPacket(packet, debug)) {
+				current_packet_num++;
+
+				std::stringstream msg_stream;
+				hduVector3Dd &packet_pos = packet->GetPos();
+
+				// Predict? , PacketTime, PacketNo, PosX, PosY, PosZ
+				msg_stream << "," << 0 << "," << packet->GetTimestamp() << "," << packet->GetPacketNum() << "," <<
+					packet_pos[0] << "," << packet_pos[1] << "," << packet_pos[2];
+
+				sndlogger->log(msg_stream.str());
+			}
 			sent_queue.push_back(packet);
 			if (sent_queue.size() > PREDICTOR_QUEUE_SIZE) {
 				delete sent_queue.front();
@@ -157,6 +179,8 @@ public:
 		pos_delta = 0;
 		std::string alias_str("");
 		alias_str.push_back(alias);
+		last_received_timestamp = getCurrentTime();
+		current_packet_num = 1;
 	}
 
 	void tick() {

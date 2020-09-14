@@ -6,7 +6,7 @@
 #include "hd_time.h"
 
 const int32_t POS_OFFSET = 0;
-const int32_t COUNT_OFFSET = sizeof(pos_t) * 3;
+const int32_t COUNT_OFFSET = POS_OFFSET + sizeof(pos_t) * 3;
 const int32_t TIMESTAMP_OFFSET = (COUNT_OFFSET + sizeof(cnt_t));
 const int32_t PACKET_SIZE = (TIMESTAMP_OFFSET + sizeof(ts_t));
 
@@ -28,15 +28,17 @@ public:
 		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = 0;
 	}
 
-	HapticPacket(const hduVector3Dd pos) {
-		UpdatePacket(pos);
+	HapticPacket(const hduVector3Dd pos, cnt_t packetnum) {
+		*((cnt_t*)(buffer + COUNT_OFFSET)) = 0;
+		UpdatePacket(pos, packetnum);
 	}
 
 	HapticPacket(const char* source) {
+		*((cnt_t*)(buffer + COUNT_OFFSET)) = 0;
 		UpdatePacket(source);
 	}
 
-	void UpdatePacket(const hduVector3Dd pos) {
+	void UpdatePacket(const hduVector3Dd pos, cnt_t packetnum) {
 		/* update from position data. also automatically updates counter and timestamp. */
 
 		// update position
@@ -45,7 +47,7 @@ public:
 		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = pos[2];
 
 		// update packet counter
-		*((cnt_t*)(buffer + COUNT_OFFSET)) += 1;
+		*((cnt_t*)(buffer + COUNT_OFFSET)) = packetnum;
 
 		// update timestamp
 		*((ts_t*)(buffer + TIMESTAMP_OFFSET)) = getCurrentTime();

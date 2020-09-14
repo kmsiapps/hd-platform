@@ -36,7 +36,7 @@ public:
 class RCVLogger : public Logger {
 protected:
 	void writeHeader() {
-		*output_file << "Predict?,PacketTime,PacketNo,PosX,PosY,PosZ,Loss";
+		*output_file << "Predict?,PacketTime,Delay,PacketNo,PosX,PosY,PosZ,Loss";
 	}
 public:
 	RCVLogger(const std::string &filename) : Logger(filename) {}
