@@ -57,9 +57,9 @@ HapticDeviceController* DeviceCon2;
 char DEVICE_NAME_1[32] = "PHANToM 1";
 char DEVICE_NAME_2[32] = "PHANToM 2";
 char ALIAS = 'S';
-char MASTER_ADDR[32] = "127.0.0.1"; //"192.168.1.158";
+char MASTER_ADDR[32] = "127.0.0.1"; //"192.168.1.158"; "192.168.42.166"
 uint32_t MASTER_PORT = 25000;
-char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136";
+char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136"; "192.168.42.166"
 uint32_t SLAVE_PORT = 25001;
 
 /******************************************************************************
@@ -301,7 +301,7 @@ int main(int argc, char* argv[])
 
 	// haptics callback
 	std::cout << "haptics callback" << std::endl;
-	
+
 	SNDLogger m_sndlogger("m_snd.csv");
 	RCVLogger m_rcvlogger("m_rcv.csv");
 	ERRLogger m_errlogger("m_err.csv");

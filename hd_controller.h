@@ -133,7 +133,7 @@ private:
 		hduVector3Dd prev_pos;
 
 		// predictive packet sending
-		if (sent_queue.back())
+		if (sent_queue.size())
 			prev_pos = sent_queue.back()->GetPos();
 		else
 			prev_pos = hduVector3Dd(0, 0, 0);
@@ -167,7 +167,7 @@ private:
 
 	bool IsPerceptable(const hduVector3Dd pred_pos, const hduVector3Dd real_pos) {
 		float i = (pred_pos - real_pos).magnitude();
-		float delta_i = PREDICTOR_CONSTANT_K * (pos_delta + 0.0001);
+		float delta_i = -1; // PREDICTOR_CONSTANT_K * (pos_delta + 0.0001);
 		return i >= delta_i;
 	}
 
