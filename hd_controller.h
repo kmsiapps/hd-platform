@@ -12,7 +12,7 @@
 #include "hd_logger.h"
 
 #define PREDICTOR_QUEUE_SIZE 5 // received_queue Size
-#define PREDICTOR_CONSTANT_K 0.1 // K in Weber's law
+#define PREDICTOR_CONSTANT_K -1 // K in Weber's law
 #define FORCE_STRENGTH 0.3
 
 class HapticDeviceController {
@@ -54,7 +54,7 @@ private:
 		hduVector3Dd pos;
 		hdGetDoublev(HD_CURRENT_POSITION, pos);
 
-		HapticPacket *sending_packet = new HapticPacket(pos, current_packet_num);
+		HapticPacket *sending_packet = new HapticPacket(pos, current_packet_num, last_received_timestamp);
 		return sending_packet;
 	}
 
@@ -100,12 +100,17 @@ private:
 		}
 		else {
 			target_pos = packet->GetPos();
+			last_received_timestamp = packet->GetTimestamp();
+
 			std::stringstream msg_stream;
 
 			// Predict? , PacketTime, Delay, PacketNo, PosX, PosY, PosZ, Loss
-			msg_stream << 0 << "," << packet->GetTimestamp() << "," << getCurrentTime() - packet->GetTimestamp() << ","
-				       << packet->GetPacketNum() << "," << target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << ","
-				       << hdcomm->getLatestPacketCount() - hdcomm->getReceivedPacketCount() << "/" << hdcomm->getLatestPacketCount();
+			msg_stream << 0 << "," <<
+					      packet->GetTimestamp() << "," <<
+				          getCurrentTime() - packet->GetTimestamp() << "," <<
+				          packet->GetPacketNum() << "," <<
+				          target_pos[0] << "," << target_pos[1] << "," << target_pos[2] << "," << 
+				          hdcomm->getLatestPacketCount() - hdcomm->getReceivedPacketCount() << "/" << hdcomm->getLatestPacketCount();
 			rcvlogger->log(msg_stream.str());
 		}
 
@@ -133,7 +138,7 @@ private:
 		hduVector3Dd prev_pos;
 
 		// predictive packet sending
-		if (sent_queue.size())
+		if (sent_queue.back())
 			prev_pos = sent_queue.back()->GetPos();
 		else
 			prev_pos = hduVector3Dd(0, 0, 0);
@@ -167,7 +172,7 @@ private:
 
 	bool IsPerceptable(const hduVector3Dd pred_pos, const hduVector3Dd real_pos) {
 		float i = (pred_pos - real_pos).magnitude();
-		float delta_i = -1; // PREDICTOR_CONSTANT_K * (pos_delta + 0.0001);
+		float delta_i = PREDICTOR_CONSTANT_K * (pos_delta + 0.0001);
 		return i >= delta_i;
 	}
 

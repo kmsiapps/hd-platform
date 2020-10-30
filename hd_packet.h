@@ -28,9 +28,9 @@ public:
 		*((pos_t*)(buffer + POS_OFFSET + 2 * sizeof(pos_t))) = 0;
 	}
 
-	HapticPacket(const hduVector3Dd pos, cnt_t packetnum) {
+	HapticPacket(const hduVector3Dd pos, cnt_t packetnum, ts_t last_received_timestamp) {
 		*((cnt_t*)(buffer + COUNT_OFFSET)) = 0;
-		UpdatePacket(pos, packetnum);
+		UpdatePacket(pos, packetnum, last_received_timestamp);
 	}
 
 	HapticPacket(const char* source) {
@@ -38,7 +38,7 @@ public:
 		UpdatePacket(source);
 	}
 
-	void UpdatePacket(const hduVector3Dd pos, cnt_t packetnum) {
+	void UpdatePacket(const hduVector3Dd pos, cnt_t packetnum, ts_t last_received_timestamp) {
 		/* update from position data. also automatically updates counter and timestamp. */
 
 		// update position
@@ -50,7 +50,7 @@ public:
 		*((cnt_t*)(buffer + COUNT_OFFSET)) = packetnum;
 
 		// update timestamp
-		*((ts_t*)(buffer + TIMESTAMP_OFFSET)) = getCurrentTime();
+		*((ts_t*)(buffer + TIMESTAMP_OFFSET)) = last_received_timestamp;
 	}
 
 	void UpdatePacket(const char *source) {
