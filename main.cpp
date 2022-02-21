@@ -19,9 +19,10 @@
 
 using namespace std;
 
-HHD phantomId_1, phantomId_2; // Dual Phantom devices.
+HHD deviceID; // Dual Phantom devices.
 HDSchedulerHandle gSchedulerCallback = HD_INVALID_HANDLE;
-HDSchedulerHandle gSchedulerCallback2 = HD_INVALID_HANDLE;
+
+hduVector3Dd forceField(hduVector3Dd pos);
 
 /* Global variable declaration*/
 int modC = 10;   // default: 1000 Hz -> 1000%modC HZ
@@ -42,25 +43,15 @@ struct DeviceDisplayStates
 	hduVector3Dd force;
 };
 
-SOCKET master_sock;
-SOCKET slave_sock;
-sockaddr_in master_addr;
-sockaddr_in slave_addr;
+SOCKET sock;
+sockaddr_in server_addr;
 
 HDCommunicator* HDComm;
-HDCommunicator* HDComm2;
-
 HapticDeviceController* DeviceCon;
-HapticDeviceController* DeviceCon2;
 
-// FOR INITIAL SETTINGS
-char DEVICE_NAME_1[32] = "PHANToM 1";
-char DEVICE_NAME_2[32] = "PHANToM 2";
-char ALIAS = 'S';
-char MASTER_ADDR[32] = "127.0.0.1"; //"192.168.1.158"; "192.168.42.166"
-uint32_t MASTER_PORT = 25000;
-char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136"; "192.168.42.166"
-uint32_t SLAVE_PORT = 25001;
+char* DEVICE_NAME;
+char* SERVER_ADDR;
+uint32_t SERVER_PORT = 50000;
 
 /******************************************************************************
 Makes a device specified in the pUserData current.
@@ -76,11 +67,6 @@ HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 
 	return HD_CALLBACK_DONE;
 }
-
-/*******************************************************************************
-Given the position is space, calculates the (modified) coulomb force.
-*******************************************************************************/
-
 
 //V-band algorithm
 void ifErrorHold(hduVector3Dd pos)
@@ -134,57 +120,17 @@ HDCallbackCode HDCALLBACK deviceCallback(void *data)
 	return HD_CALLBACK_CONTINUE;
 }
 
-HDCallbackCode HDCALLBACK deviceCallback2(void *data)
-{
-	DeviceCon2->tick();
-
-	HDErrorInfo error;
-	if (HD_DEVICE_ERROR(error = hdGetError())) {
-		hduPrintError(stderr, &error, "Error during scheduler callback");
-		if (hduIsSchedulerError(&error)) return HD_CALLBACK_DONE;
-	}
-
-	return HD_CALLBACK_CONTINUE;
-}
-
 int initSocket() {
-	// create a hint structure for the server
-	memset(&master_addr, 0, sizeof(master_addr));
-	master_addr.sin_family = AF_INET;
-	master_addr.sin_port = htons(MASTER_PORT);
-	inet_pton(AF_INET, MASTER_ADDR, &master_addr.sin_addr);
-
-	memset(&slave_addr, 0, sizeof(slave_addr));
-	slave_addr.sin_family = AF_INET;
-	slave_addr.sin_port = htons(SLAVE_PORT);
-	inet_pton(AF_INET, SLAVE_ADDR, &slave_addr.sin_addr);
-
 	ULONG isNonBlocking = 1;
 
-	// socket creation
+	// create a hint structure for the server
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(SERVER_PORT);
+	inet_pton(AF_INET, SERVER_ADDR, &server_addr.sin_addr);
 
-	//if (ALIAS == 'S') {
-	{
-		slave_sock = socket(AF_INET, SOCK_DGRAM, 0);
-		ioctlsocket(slave_sock, FIONBIO, &isNonBlocking);
-		if (::bind(slave_sock, (sockaddr*)&slave_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
-			cout << "Can't bind slave socket! " << WSAGetLastError() << endl;
-			return -1;
-		}
-	}
-	//else if (ALIAS == 'M') {
-	{
-		master_sock = socket(AF_INET, SOCK_DGRAM, 0);
-		ioctlsocket(master_sock, FIONBIO, &isNonBlocking);
-		if (::bind(master_sock, (sockaddr*)&master_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
-			cout << "Can't bind master socket! " << WSAGetLastError() << endl;
-			return -1;
-		}
-	}
-	/*else {
-	printf("Err: Alias should be either M or S\n");
-	return -1;
-	}*/
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	ioctlsocket(sock, FIONBIO, &isNonBlocking);
 
 	return 0;
 }
@@ -200,19 +146,12 @@ void exitHandler()
 	{
 		hdStopScheduler();
 		hdUnschedule(gSchedulerCallback);
-		hdUnschedule(gSchedulerCallback2);
 	}
 
-	if (phantomId_1 != HD_INVALID_HANDLE)
+	if (deviceID != HD_INVALID_HANDLE)
 	{
-		hdDisableDevice(phantomId_1);
-		phantomId_1 = HD_INVALID_HANDLE;
-	}
-
-	if (phantomId_2 != HD_INVALID_HANDLE)
-	{
-		hdDisableDevice(phantomId_2);
-		phantomId_2 = HD_INVALID_HANDLE;
+		hdDisableDevice(deviceID);
+		deviceID = HD_INVALID_HANDLE;
 	}
 }
 
@@ -223,53 +162,32 @@ int main(int argc, char* argv[])
 {
 	HDErrorInfo error;
 
-	if (argc > 1) {
-		if (argc == 5) {
-			ALIAS = argv[1][0];
-			if (ALIAS == 'M') {
-				strcpy(SLAVE_ADDR, argv[2]);
-				SLAVE_PORT = atoi(argv[3]);
-			}
-			else {
-				strcpy(MASTER_ADDR, argv[2]);
-				MASTER_PORT = atoi(argv[3]);
-			}
-			strcpy(DEVICE_NAME_1, argv[4]);
-		}
-		else {
-			printf("Usage: ./CouloumbForceDual.exe <alias> <target IP> <target PORT> <device name>n");
-		}
+	if (argc == 4) {
+		SERVER_ADDR = argv[1];
+		SERVER_PORT = atoi(argv[2]);
+		DEVICE_NAME = argv[3];
+	}
+	else {
+		printf("Usage: ./CouloumbForceDual.exe <server HOST> <server PORT> <device name>n");
+		return 0;
 	}
 
 	printf("Starting application\n");
 
 	atexit(exitHandler);
 
-	// First device.
-	phantomId_1 = hdInitDevice(DEVICE_NAME_1);
+	// Initialize device
+	deviceID = hdInitDevice(DEVICE_NAME);
 	if (HD_DEVICE_ERROR(lastError = hdGetError()))
 	{
 		hduPrintError(stderr, &error, "Failed to initialize first haptic device");
-		fprintf(stderr, "Make sure the configuration \"%s\" exists\n", DEVICE_NAME_1);
+		fprintf(stderr, "Make sure the configuration \"%s\" exists\n", DEVICE_NAME);
 		fprintf(stderr, "\nPress any key to quit.\n");
+		getchar();
 		exit(-1);
 	}
 
-	printf("1. Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
-	hdEnable(HD_FORCE_OUTPUT);
-	hdEnable(HD_FORCE_RAMPING);
-
-	// Second device.
-	phantomId_2 = hdInitDevice(DEVICE_NAME_2);
-	if (HD_DEVICE_ERROR(lastError = hdGetError()))
-	{
-		hduPrintError(stderr, &error, "Failed to initialize second haptic device");
-		fprintf(stderr, "Make sure the configuration \"%s\" exists\n", DEVICE_NAME_2);
-		fprintf(stderr, "\nPress any key to quit.\n");
-		exit(-1);
-	}
-
-	printf("2. Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
+	printf("Found device %s\n", hdGetString(HD_DEVICE_MODEL_TYPE));
 	hdEnable(HD_FORCE_OUTPUT);
 	hdEnable(HD_FORCE_RAMPING);
 
@@ -282,7 +200,7 @@ int main(int argc, char* argv[])
 		exit(-1);
 	}
 
-	hdMakeCurrentDevice(phantomId_1);
+	hdMakeCurrentDevice(deviceID);
 
 	// startup winsock
 	WSADATA data;
@@ -299,28 +217,17 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	// haptics callback
-	std::cout << "haptics callback" << std::endl;
-
 	SNDLogger m_sndlogger("m_snd.csv");
 	RCVLogger m_rcvlogger("m_rcv.csv");
 	ERRLogger m_errlogger("m_err.csv");
 
-	SNDLogger s_sndlogger("s_snd.csv");
-	RCVLogger s_rcvlogger("s_rcv.csv");
-	ERRLogger s_errlogger("s_err.csv");
-
-	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), 'M', &m_sndlogger, &m_rcvlogger, &m_errlogger);
-	DeviceCon = new HapticDeviceController(phantomId_1, 'M', HDComm, &m_sndlogger, &m_rcvlogger, &m_errlogger);
-
-	HDComm2 = new HDCommunicator(phantomId_2, slave_sock, &master_addr, sizeof(master_addr), 'S', &s_sndlogger, &s_rcvlogger, &s_errlogger);
-	DeviceCon2 = new HapticDeviceController(phantomId_2, 'S', HDComm2, &s_sndlogger, &s_rcvlogger, &s_errlogger);
+	// haptics callback
+	std::cout << "haptics callback" << std::endl;
+	HDComm = new HDCommunicator(deviceID, sock, &server_addr, sizeof(server_addr), 'S', &m_sndlogger, &m_rcvlogger, &m_errlogger);
+	DeviceCon = new HapticDeviceController(deviceID, 'S', HDComm, &m_sndlogger, &m_rcvlogger, &m_errlogger);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
-		deviceCallback, 0, HD_DEFAULT_SCHEDULER_PRIORITY);
-
-	gSchedulerCallback2 = hdScheduleAsynchronous(
-		deviceCallback2, 0, HD_DEFAULT_SCHEDULER_PRIORITY);
+		deviceCallback, 0, HD_MAX_SCHEDULER_PRIORITY);
 
 	if (HD_DEVICE_ERROR(error = hdGetError()))
 	{
@@ -333,8 +240,7 @@ int main(int argc, char* argv[])
 	while (true);
 
 	// close socket
-	closesocket(master_sock);
-	closesocket(slave_sock);
+	closesocket(sock);
 	WSACleanup();
 
 	return 0;

@@ -15,7 +15,6 @@
 
 #include "hd_controller.h"
 #include "hd_comm.h"
-#include "hd_logger.h"
 
 using namespace std;
 
@@ -60,8 +59,8 @@ char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136";
 uint32_t SLAVE_PORT = 25001;
 
 /******************************************************************************
-Makes a device specified in the pUserData current.
-Queries haptic device state: position, force, etc.
+ Makes a device specified in the pUserData current.
+ Queries haptic device state: position, force, etc.
 ******************************************************************************/
 HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 {
@@ -75,7 +74,7 @@ HDCallbackCode HDCALLBACK DeviceStateCallback(void *pUserData)
 }
 
 /*******************************************************************************
-Given the position is space, calculates the (modified) coulomb force.
+ Given the position is space, calculates the (modified) coulomb force.
 *******************************************************************************/
 
 
@@ -115,13 +114,13 @@ void velCon(hduVector3Dd pos)
 }
 
 /******************************************************************************
-Main callback.  Retrieves position from both devices, calculates forces,
-and sets forces for both devices.
+ Main callback.  Retrieves position from both devices, calculates forces,
+ and sets forces for both devices.
 ******************************************************************************/
 HDCallbackCode HDCALLBACK deviceCallback(void *data)
 {
 	DeviceCon->tick();
-
+	
 	HDErrorInfo error;
 	if (HD_DEVICE_ERROR(error = hdGetError())) {
 		hduPrintError(stderr, &error, "Error during scheduler callback");
@@ -132,34 +131,22 @@ HDCallbackCode HDCALLBACK deviceCallback(void *data)
 }
 
 int initSocket() {
-	ULONG isNonBlocking = 1;
-
 	// create a hint structure for the server
 	memset(&master_addr, 0, sizeof(master_addr));
 	master_addr.sin_family = AF_INET;
 	master_addr.sin_port = htons(MASTER_PORT);
 	inet_pton(AF_INET, MASTER_ADDR, &master_addr.sin_addr);
 
-	if (ALIAS == 'M') {
-		master_sock = socket(AF_INET, SOCK_DGRAM, 0);
-		if (::bind(master_sock, (sockaddr*)&master_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
-			cout << "Can't bind master socket! " << WSAGetLastError() << endl;
-			return -1;
-		}
+	memset(&slave_addr, 0, sizeof(master_addr));
+	slave_addr.sin_family = AF_INET;
+	slave_addr.sin_port = htons(SLAVE_PORT);
+	inet_pton(AF_INET, SLAVE_ADDR, &slave_addr.sin_addr);
 
-		// get client ip address & port number
-		char buf[32];
-		int32_t master_addr_size = sizeof(slave_addr);
-		recvfrom(master_sock, buf, sizeof(buf), 0, (sockaddr*)&slave_addr, &master_addr_size);
+	ULONG isNonBlocking = 1;
 
-		ioctlsocket(master_sock, FIONBIO, &isNonBlocking);
-	}
-	else if (ALIAS == 'S') {
-		memset(&slave_addr, 0, sizeof(master_addr));
-		slave_addr.sin_family = AF_INET;
-		slave_addr.sin_port = htons(SLAVE_PORT);
-		inet_pton(AF_INET, SLAVE_ADDR, &slave_addr.sin_addr);
+	// socket creation
 
+	if (ALIAS == 'S') {
 		slave_sock = socket(AF_INET, SOCK_DGRAM, 0);
 		ioctlsocket(slave_sock, FIONBIO, &isNonBlocking);
 		if (::bind(slave_sock, (sockaddr*)&slave_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
@@ -167,13 +154,25 @@ int initSocket() {
 			return -1;
 		}
 	}
+	else if (ALIAS == 'M') {
+		master_sock = socket(AF_INET, SOCK_DGRAM, 0);
+		ioctlsocket(master_sock, FIONBIO, &isNonBlocking);
+		if (::bind(master_sock, (sockaddr*)&master_addr, sizeof(sockaddr_in)) == SOCKET_ERROR) {
+			cout << "Can't bind master socket! " << WSAGetLastError() << endl;
+			return -1;
+		}
+	}
+	else {
+		printf("Err: Alias should be either M or S\n");
+		return -1;
+	}
 
 	return 0;
 }
 
 /******************************************************************************
-This handler gets called when the process is exiting.  Ensures that HDAPI is
-properly shutdown.
+ This handler gets called when the process is exiting.  Ensures that HDAPI is
+ properly shutdown.
 ******************************************************************************/
 void exitHandler()
 {
@@ -192,7 +191,7 @@ void exitHandler()
 }
 
 /******************************************************************************
-Main entry point.
+ Main entry point.
 ******************************************************************************/
 int main(int argc, char* argv[])
 {
@@ -261,14 +260,10 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
-	SNDLogger m_sndlogger("m_snd.csv");
-	RCVLogger m_rcvlogger("m_rcv.csv");
-	ERRLogger m_errlogger("m_err.csv");
-
 	// haptics callback
 	std::cout << "haptics callback" << std::endl;
-	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), 'M', &m_sndlogger, &m_rcvlogger, &m_errlogger);
-	DeviceCon = new HapticDeviceController(phantomId_1, 'M', HDComm, &m_sndlogger, &m_rcvlogger, &m_errlogger);
+	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), ALIAS);
+	DeviceCon = new HapticDeviceController(phantomId_1, ALIAS, HDComm);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
 		deviceCallback, 0, HD_MAX_SCHEDULER_PRIORITY);

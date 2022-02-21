@@ -87,6 +87,8 @@ private:
 		hduVector3Dd current_pos;
 		hdGetDoublev(HD_CURRENT_POSITION, current_pos);
 
+		printf("Running\n");
+
 		if (packet == NULL) {
 			// No received pos
 			hduVector3Dd base_pos = received_queue.size()? received_queue.back()->GetPos() : current_pos;

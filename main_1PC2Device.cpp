@@ -15,13 +15,14 @@
 
 #include "hd_controller.h"
 #include "hd_comm.h"
-#include "hd_logger.h"
 
 using namespace std;
 
 HHD phantomId_1, phantomId_2; // Dual Phantom devices.
 HDSchedulerHandle gSchedulerCallback = HD_INVALID_HANDLE;
 HDSchedulerHandle gSchedulerCallback2 = HD_INVALID_HANDLE;
+
+hduVector3Dd forceField(hduVector3Dd pos);
 
 /* Global variable declaration*/
 int modC = 10;   // default: 1000 Hz -> 1000%modC HZ
@@ -57,9 +58,9 @@ HapticDeviceController* DeviceCon2;
 char DEVICE_NAME_1[32] = "PHANToM 1";
 char DEVICE_NAME_2[32] = "PHANToM 2";
 char ALIAS = 'S';
-char MASTER_ADDR[32] = "192.168.1.136"; //"192.168.1.158"; "192.168.42.166"
+char MASTER_ADDR[32] = "127.0.0.1"; //"192.168.1.158";
 uint32_t MASTER_PORT = 25000;
-char SLAVE_ADDR[32] = "192.168.1.136"; // "192.168.1.136"; "192.168.42.166"
+char SLAVE_ADDR[32] = "127.0.0.1"; // "192.168.1.136";
 uint32_t SLAVE_PORT = 25001;
 
 /******************************************************************************
@@ -301,20 +302,11 @@ int main(int argc, char* argv[])
 
 	// haptics callback
 	std::cout << "haptics callback" << std::endl;
+	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), 'M');
+	DeviceCon = new HapticDeviceController(phantomId_1, 'M', HDComm);
 
-	SNDLogger m_sndlogger("m_snd.csv");
-	RCVLogger m_rcvlogger("m_rcv.csv");
-	ERRLogger m_errlogger("m_err.csv");
-
-	SNDLogger s_sndlogger("s_snd.csv");
-	RCVLogger s_rcvlogger("s_rcv.csv");
-	ERRLogger s_errlogger("s_err.csv");
-
-	HDComm = new HDCommunicator(phantomId_1, master_sock, &slave_addr, sizeof(slave_addr), 'M', &m_sndlogger, &m_rcvlogger, &m_errlogger);
-	DeviceCon = new HapticDeviceController(phantomId_1, 'M', HDComm, &m_sndlogger, &m_rcvlogger, &m_errlogger);
-
-	HDComm2 = new HDCommunicator(phantomId_2, slave_sock, &master_addr, sizeof(master_addr), 'S', &s_sndlogger, &s_rcvlogger, &s_errlogger);
-	DeviceCon2 = new HapticDeviceController(phantomId_2, 'S', HDComm2, &s_sndlogger, &s_rcvlogger, &s_errlogger);
+	HDComm2 = new HDCommunicator(phantomId_2, slave_sock, &master_addr, sizeof(master_addr), 'S');
+	DeviceCon2 = new HapticDeviceController(phantomId_2, 'S', HDComm2);
 
 	gSchedulerCallback = hdScheduleAsynchronous(
 		deviceCallback, 0, HD_DEFAULT_SCHEDULER_PRIORITY);
