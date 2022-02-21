@@ -7,4 +7,4 @@ Haptic telepresence software for open wireless haptic/VR platform.
 - MSVC compiler & Windows
 
 ## Usage
-./CoulombForceDual.exe RELAY_SERVER_HOSTNAME RELAY_SERVER_PORT DEVICE_NAME
+`./CoulombForceDual.exe RELAY_SERVER_HOSTNAME RELAY_SERVER_PORT DEVICE_NAME`
